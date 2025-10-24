@@ -21,7 +21,9 @@
         ({ config, pkgs, ... }: {
           home-manager.useGlobalPkgs = true;
           home-manager.useUserPackages = true;
-          home-manager.users.callum = import ./home.nix;
+          # Ensure the imported home module gets `pkgs` so it can evaluate
+          # without causing recursive evaluation of module args.
+          home-manager.users.callum = import ./home.nix { inherit pkgs; };
         })
       ];
     };
