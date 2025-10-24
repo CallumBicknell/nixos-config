@@ -1,5 +1,8 @@
 { config, pkgs, ... }:
 
+let
+  hasElogind = builtins.hasAttr "elogind" config.services;
+in
 {
   environment.systemPackages = with pkgs; [
     hyprland
@@ -22,7 +25,4 @@ Name=Hyprland
 Exec=Hyprland
 Type=Application
 '';
-
-  # Elogind is sometimes needed for seat/device management; keep enabled but removable.
-  services.elogind.enable = true;
 }
