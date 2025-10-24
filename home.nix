@@ -22,8 +22,12 @@ let
       git
       zsh
       starship
-      neovim
     ];
   };
 in
-lib.mkMerge [ base hypr waybar neovim ]
+lib.mkMerge [
+  base
+  hypr
+  waybar
+  neovim
+]
