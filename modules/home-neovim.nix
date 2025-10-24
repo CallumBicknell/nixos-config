@@ -4,7 +4,6 @@
   # Configure neovim via home-manager's programs.neovim module.
   programs.neovim = {
     enable = true;
-    package = pkgs.neovim;
     defaultEditor = true;
     viAlias = true;
     vimAlias = true;
