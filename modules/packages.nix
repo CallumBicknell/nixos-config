@@ -6,7 +6,6 @@
     git
     curl
     wget
-    neovim
     zsh
 
     # Hyprland / Wayland ecosystem
