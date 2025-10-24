@@ -3,7 +3,7 @@
 {
   # Waybar: install package and make a couple of sane environment settings.
   home = {
-    packages = with pkgs; [ waybar waybar-hyprland ];
+    packages = with pkgs; [ waybar ];
 
     # Export an XDG variable so modules that consume it can find Waybar config
     sessionVariables = {
