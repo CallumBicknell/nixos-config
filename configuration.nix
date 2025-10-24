@@ -1,7 +1,8 @@
 { config, pkgs, ... }:
 
 let
-  hw = if builtins.pathExists ./hardware-configuration.nix then [ ./hardware-configuration.nix ] else [];
+  hw =
+    if builtins.pathExists ./hardware-configuration.nix then [ ./hardware-configuration.nix ] else [ ];
 in
 
 {
@@ -24,12 +25,10 @@ in
   # Keep a pinned state version for compatibility
   system.stateVersion = "25.05";
 
-  # Provide a safe default for the GRUB installation target so `nixos-install`
-  # won't fail when `hardware-configuration.nix` is not present. Users should
-  # override this in their generated hardware config or host-specific files.
-  boot.loader.grub = {
-    enable = true;
-    # Default to /dev/sda in evaluation-only contexts; this can be overridden.
-    devices = pkgs.lib.mkDefault [ "/dev/sda" ];
-  };
+  # Do not enable GRUB by default during local evaluation/installer runs.
+  # Installing a boot loader requires knowing whether the target system is
+  # BIOS or UEFI and which device/ESP to use. Leave this to the generated
+  # `hardware-configuration.nix` on the target machine or to host-specific
+  # overrides in `hosts/*.nix`.
+  boot.loader.grub.enable = pkgs.lib.mkDefault false;
 }
