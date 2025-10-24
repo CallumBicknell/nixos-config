@@ -66,6 +66,7 @@ REPO_URL=""
 YES=0
 TARGET_DISK=""
 DRY_RUN=0
+SKIP_DISKO=0
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -87,6 +88,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --dry-run)
             DRY_RUN=1
+            shift
+            ;;
+        --skip-disko)
+            SKIP_DISKO=1
             shift
             ;;
         --help) 
@@ -124,13 +129,22 @@ if [ -z "$TARGET_DISK" ]; then
     exit 1
 fi
 
-if [ "$DRY_RUN" -eq 0 ]; then
-    if [ ! -b "$TARGET_DISK" ]; then
-        err "Device $TARGET_DISK does not exist or is not a block device."
+if [ "$SKIP_DISKO" -eq 1 ]; then
+    info "--skip-disko set: assuming target device has been prepared and mounted under /mnt"
+    # don't validate block device when skipping disko, but require /mnt exists
+    if ! mountpoint -q /mnt; then
+        err "/mnt is not a mount point. When using --skip-disko you must mount target filesystems under /mnt before running the script."
         exit 1
     fi
 else
-    info "Dry-run: skipping block device existence check for $TARGET_DISK"
+    if [ "$DRY_RUN" -eq 0 ]; then
+        if [ ! -b "$TARGET_DISK" ]; then
+            err "Device $TARGET_DISK does not exist or is not a block device."
+            exit 1
+        fi
+    else
+        info "Dry-run: skipping block device existence check for $TARGET_DISK"
+    fi
 fi
 
 echo
@@ -202,16 +216,21 @@ if [ "$DRY_RUN" -eq 1 ]; then
     exit 0
 fi
 
-if ! $SUDO nix --experimental-features "nix-command flakes" run \
-    github:nix-community/disko/latest -- \
-    --mode destroy,format,mount "$TMP_NIX"; then
-    err "Disko failed!"
-    rm -f "$TMP_NIX"
-    [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
-    exit 1
-fi
+if [ "$SKIP_DISKO" -eq 0 ]; then
+    if ! $SUDO nix --experimental-features "nix-command flakes" run \
+        github:nix-community/disko/latest -- \
+        --mode destroy,format,mount "$TMP_NIX"; then
+        err "Disko failed!"
+        rm -f "$TMP_NIX"
+        [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
+        exit 1
+    fi
 
-rm -f "$TMP_NIX"
+    rm -f "$TMP_NIX"
+else
+    info "--skip-disko: not running disko; assuming device already formatted and mounted under /mnt"
+    rm -f "$TMP_NIX"
+fi
 
 echo
 info "Disko completed successfully!"
