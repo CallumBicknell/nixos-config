@@ -1,8 +1,5 @@
 { config, pkgs, ... }:
 
-let
-  hasElogind = builtins.hasAttr "elogind" config.services;
-in
 {
   environment.systemPackages = with pkgs; [
     hyprland

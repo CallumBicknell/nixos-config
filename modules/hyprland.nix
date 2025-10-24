@@ -10,6 +10,4 @@ Name=Hyprland
 Exec=Hyprland
 Type=Application
 '';
-
-  services.elogind.enable = true;
 }
