@@ -34,7 +34,6 @@
 
     # Development
     nodejs
-    npm
     rustc
     rust-analyzer
     go
