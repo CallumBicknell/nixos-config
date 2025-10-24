@@ -4,7 +4,11 @@
   # Installer-related helpers. This module doesn't change runtime behaviour by default;
   # it provides documentation and tools for using `disko` to create an encrypted Btrfs layout.
 
-  environment.systemPackages = with pkgs; [ disko cryptsetup btrfs-progs ];
+  environment.systemPackages = with pkgs; [
+    disko
+    cryptsetup
+    btrfs-progs
+  ];
 
   # Example notes / placeholders for a LUKS + Btrfs setup. These are intentionally
   # commented out — uncomment and adjust device paths when you're installing.

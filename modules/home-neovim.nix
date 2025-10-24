@@ -5,21 +5,23 @@
   programs.neovim = {
     enable = true;
     package = pkgs.neovim;
+    defaultEditor = true;
+    viAlias = true;
+    vimAlias = true;
+    vimdiffAlias = true;
+    plugins = with pkgs.vimPlugins; [
+      nvim-lspconfig
+      nvim-treesitter.withAllGrammars
+      plenary-nvim
+      gruvbox-material
+      mini-nvim
+    ];
 
-    # Minimal init.vim content using embedded lua block; expand as needed.
-    extraConfig = ''
-lua << EOF
-require('packer').startup(function(use)
-  use 'wbthomason/packer.nvim'
-  use 'neovim/nvim-lspconfig'
-  use 'nvim-treesitter/nvim-treesitter'
-  use 'hrsh7th/nvim-cmp'
-  use 'hrsh7th/cmp-nvim-lsp'
-end)
-EOF
-'';
-
-    # Provide some extra runtime packages commonly useful for development
-    extraPackages = with pkgs; [ nodejs python3 neovim python3Packages.pynvim ];
+    extraPackages = with pkgs; [
+      nodejs
+      python3
+      neovim
+      python3Packages.pynvim
+    ];
   };
 }
