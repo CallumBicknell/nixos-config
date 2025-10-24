@@ -114,29 +114,34 @@ fi
 echo
 info "Configuration:"
 echo "  Host: $HOST"
-echo "  Target disk: ${TARGET_DISK:-<not set>}"
+if [ "$SKIP_DISKO" -eq 1 ]; then
+    echo "  Target disk: <skip-disko enabled>"
+else
+    echo "  Target disk: ${TARGET_DISK:-<not set>}"
+fi
 echo
 
-if [ -z "$TARGET_DISK" ]; then
-    echo "Available block devices:"
-    lsblk -dpn -o NAME,SIZE,MODEL || true
-    echo
-    read -rp "Enter the block device to use (e.g. /dev/nvme0n1): " TARGET_DISK
-fi
-
-if [ -z "$TARGET_DISK" ]; then
-    err "No device specified. Aborting."
-    exit 1
-fi
-
+# When skipping disko we must not prompt for or validate the block device.
 if [ "$SKIP_DISKO" -eq 1 ]; then
     info "--skip-disko set: assuming target device has been prepared and mounted under /mnt"
-    # don't validate block device when skipping disko, but require /mnt exists
+    # require /mnt to be a mount point and don't ask for a block device
     if ! mountpoint -q /mnt; then
         err "/mnt is not a mount point. When using --skip-disko you must mount target filesystems under /mnt before running the script."
         exit 1
     fi
 else
+    if [ -z "$TARGET_DISK" ]; then
+        echo "Available block devices:"
+        lsblk -dpn -o NAME,SIZE,MODEL || true
+        echo
+        read -rp "Enter the block device to use (e.g. /dev/nvme0n1): " TARGET_DISK
+    fi
+
+    if [ -z "$TARGET_DISK" ]; then
+        err "No device specified. Aborting."
+        exit 1
+    fi
+
     if [ "$DRY_RUN" -eq 0 ]; then
         if [ ! -b "$TARGET_DISK" ]; then
             err "Device $TARGET_DISK does not exist or is not a block device."
@@ -145,14 +150,14 @@ else
     else
         info "Dry-run: skipping block device existence check for $TARGET_DISK"
     fi
-fi
 
-echo
-info "WARNING: This will DESTROY ALL DATA on $TARGET_DISK"
-if [ "$YES" -eq 0 ]; then
-    if ! confirm "Proceed with formatting $TARGET_DISK?"; then
-        echo "Aborting."
-        exit 1
+    echo
+    info "WARNING: This will DESTROY ALL DATA on $TARGET_DISK"
+    if [ "$YES" -eq 0 ]; then
+        if ! confirm "Proceed with formatting $TARGET_DISK?"; then
+            echo "Aborting."
+            exit 1
+        fi
     fi
 fi
 
@@ -174,49 +179,49 @@ else
     USE_DIR="$TMP_CLONE"
 fi
 
-DISKO_PLAN="$USE_DIR/scripts/disko-desktop.nix"
-if [ ! -f "$DISKO_PLAN" ]; then
-    err "Disko plan not found: $DISKO_PLAN"
-    [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
-    exit 1
-fi
+if [ "$SKIP_DISKO" -eq 0 ]; then
+    DISKO_PLAN="$USE_DIR/scripts/disko-desktop.nix"
+    if [ ! -f "$DISKO_PLAN" ]; then
+        err "Disko plan not found: $DISKO_PLAN"
+        [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
+        exit 1
+    fi
 
-TMP_NIX=$(mktemp /tmp/disko-plan.XXXX.nix)
-cat > "$TMP_NIX" <<NIX
+    TMP_NIX=$(mktemp /tmp/disko-plan.XXXX.nix)
+    cat > "$TMP_NIX" <<NIX
 let
     plan = import "$DISKO_PLAN" { device = "$TARGET_DISK"; };
 in
   plan
 NIX
 
-info "Created temporary disko plan: $TMP_NIX"
-echo
-
-info "Running disko (this will destroy data on $TARGET_DISK)"
-echo "You may be prompted for your sudo password..."
-echo
-
-if [ "$DRY_RUN" -eq 1 ]; then
-    info "Dry-run mode: will not execute disko or nixos-install."
+    info "Created temporary disko plan: $TMP_NIX"
     echo
-    info "Temporary disko plan ($TMP_NIX) contents:"
-    echo "----"
-    # print_plan: prefer sed, fall back to head or cat so minimal container images work
-    if command -v sed >/dev/null 2>&1; then
-        sed -n '1,200p' "$TMP_NIX" || true
-    elif command -v head >/dev/null 2>&1; then
-        head -n 200 "$TMP_NIX" || true
-    else
-        cat "$TMP_NIX" || true
-    fi
-    echo "----"
-    info "Plan generation validated. Exiting due to --dry-run."
-    rm -f "$TMP_NIX"
-    [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
-    exit 0
-fi
 
-if [ "$SKIP_DISKO" -eq 0 ]; then
+    info "Running disko (this will destroy data on $TARGET_DISK)"
+    echo "You may be prompted for your sudo password..."
+    echo
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+        info "Dry-run mode: will not execute disko or nixos-install."
+        echo
+        info "Temporary disko plan ($TMP_NIX) contents:"
+        echo "----"
+        # print_plan: prefer sed, fall back to head or cat so minimal container images work
+        if command -v sed >/dev/null 2>&1; then
+            sed -n '1,200p' "$TMP_NIX" || true
+        elif command -v head >/dev/null 2>&1; then
+            head -n 200 "$TMP_NIX" || true
+        else
+            cat "$TMP_NIX" || true
+        fi
+        echo "----"
+        info "Plan generation validated. Exiting due to --dry-run."
+        rm -f "$TMP_NIX"
+        [ -n "$TMP_CLONE" ] && rm -rf "$TMP_CLONE"
+        exit 0
+    fi
+
     if ! $SUDO nix --experimental-features "nix-command flakes" run \
         github:nix-community/disko/latest -- \
         --mode destroy,format,mount "$TMP_NIX"; then
@@ -229,7 +234,6 @@ if [ "$SKIP_DISKO" -eq 0 ]; then
     rm -f "$TMP_NIX"
 else
     info "--skip-disko: not running disko; assuming device already formatted and mounted under /mnt"
-    rm -f "$TMP_NIX"
 fi
 
 echo
