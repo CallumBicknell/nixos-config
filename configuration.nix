@@ -1,9 +1,12 @@
 { config, pkgs, ... }:
 
+let
+  hw = if builtins.pathExists ./hardware-configuration.nix then [ ./hardware-configuration.nix ] else [];
+in
+
 {
   # Import hardware config and modular pieces from ./modules
-  imports = [
-    ./hardware-configuration.nix
+  imports = hw ++ [
     ./modules/users.nix
     ./modules/packages.nix
     ./modules/services.nix
@@ -11,7 +14,6 @@
   ];
 
   # Basic machine identity
-  networking.hostName = "callum";
   time.timeZone = "Europe/London";
 
   # Enable Nix experimental features system-wide (makes `nix` commands like flakes available)
