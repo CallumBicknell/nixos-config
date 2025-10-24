@@ -9,6 +9,8 @@ let
     home = {
       username = "callum";
       homeDirectory = "/home/callum";
+      # Home Manager expects this under `home.stateVersion`.
+      stateVersion = "25.05";
     };
 
     programs = { zsh = { enable = true; }; };
