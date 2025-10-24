@@ -14,6 +14,8 @@ let
     programs = { zsh = { enable = true; }; };
 
     home.packages = with pkgs; [ git zsh starship neovim ];
+
+    stateVersion = "25.05";
   };
 in
 lib.mkMerge [ base hypr waybar neovim ]
