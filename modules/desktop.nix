@@ -22,4 +22,15 @@
     Exec=Hyprland
     Type=Application
   '';
+
+  # Ensure the system console and desktop use the UK / GB keyboard layout.
+  # - console.keyMap sets the kernel console layout (tty)
+  # - environment.sessionVariables exports XKB variables for graphical sessions
+  #   (Wayland compositors and some display managers read these).
+  console.keyMap = "uk";
+
+  environment.sessionVariables = {
+    XKB_DEFAULT_LAYOUT = "gb";
+    XKB_DEFAULT_VARIANT = "";
+  };
 }
