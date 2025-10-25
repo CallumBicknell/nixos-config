@@ -7,11 +7,18 @@
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }:
+  outputs =
+    {
+      self,
+      nixpkgs,
+      home-manager,
+      ...
+    }:
     let
       system = "x86_64-linux";
 
-      makeConfig = host:
+      makeConfig =
+        host:
         let
           pkgs = import nixpkgs {
             inherit system;
@@ -23,6 +30,7 @@
 
           modules = [
             ./configuration.nix
+            ./scripts/disko-desktop.nix
             ./hosts/${host}.nix
 
             home-manager.nixosModules.home-manager
@@ -34,7 +42,8 @@
             }
           ];
         };
-    in {
+    in
+    {
       nixosConfigurations = {
         desktop = makeConfig "desktop";
         laptop = makeConfig "laptop";
