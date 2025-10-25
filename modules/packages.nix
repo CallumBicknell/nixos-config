@@ -10,6 +10,8 @@
 
     # Hyprland / Wayland ecosystem
     hyprland
+    hypridle
+    hyprlock
     wayland
     wayland-protocols
     wlroots
