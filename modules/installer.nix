@@ -57,7 +57,7 @@
   # Use a conventional mountpoint for the EFI System Partition on the installed
   # root. When using --skip-disko ensure you mount the ESP at /mnt/boot or
   # /mnt/boot/efi beforehand so the installer can install the bootloader.
-  boot.loader.efi.efiSysMountPoint = pkgs.lib.mkDefault "/boot/efi";
+  boot.loader.efi.efiSysMountPoint = pkgs.lib.mkDefault "/boot";
 
   # Secure Boot: supporting secure boot requires generating and enrolling keys
   # or using a shim. This is intentionally not enabled by default here because it

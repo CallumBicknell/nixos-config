@@ -5,6 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     home-manager.url = "github:nix-community/home-manager";
     home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    disko.url = "github:nix-community/disko";
   };
 
   outputs =
@@ -12,6 +13,7 @@
       self,
       nixpkgs,
       home-manager,
+      disko,
       ...
     }:
     let
@@ -29,6 +31,8 @@
           inherit system;
 
           modules = [
+            disko.nixosModules.disko
+
             ./configuration.nix
             ./scripts/disko-desktop.nix
             ./hosts/${host}.nix
