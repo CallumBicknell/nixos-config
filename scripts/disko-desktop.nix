@@ -29,7 +29,8 @@
                 # Use interactive passphrase by leaving keyFile null
                 settings = {
                   allowDiscards = true;
-                  keyFile = null;
+                  # keyFile = null;
+                  keyFile = "/tmp/secret.key"; # for scripted installs
                 };
                 content = {
                   type = "btrfs";

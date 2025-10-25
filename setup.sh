@@ -37,6 +37,90 @@ cleanup() {
 
 trap cleanup EXIT
 
+# Enter a chroot under /mnt to allow manual repairs. This binds /dev, /proc,
+# /sys, /run and /dev/pts into the target and launches an interactive shell.
+enter_chroot() {
+    info "Preparing chroot environment under /mnt"
+    # bind mount required filesystems
+    $SUDO mount --bind /dev /mnt/dev || true
+    $SUDO mount --bind /dev/pts /mnt/dev/pts || true
+    $SUDO mount -t proc proc /mnt/proc || true
+    $SUDO mount -t sysfs sys /mnt/sys || true
+    $SUDO mount --bind /run /mnt/run || true
+
+    info "Entering chroot (/mnt). Exit the shell to continue the installer."
+    # Prefer an interactive bash if available
+    if $SUDO test -x /mnt/bin/bash >/dev/null 2>&1; then
+        $SUDO chroot /mnt /bin/bash --login
+    else
+        $SUDO chroot /mnt /bin/sh
+    fi
+
+    info "Left chroot; cleaning up mounts"
+    # Attempt to unmount in reverse order; tolerate failures
+    $SUDO umount -l /mnt/run || true
+    $SUDO umount -l /mnt/sys || true
+    $SUDO umount -l /mnt/proc || true
+    $SUDO umount -l /mnt/dev/pts || true
+    $SUDO umount -l /mnt/dev || true
+}
+
+# Detect an EFI System Partition (ESP) on the target disk(s) and mount it under
+# /mnt/boot/efi (or /mnt/boot) so UEFI bootloaders (systemd-boot, GRUB EFI)
+# can be installed when using --skip-disko. This is conservative and will only
+# attempt to mount a partition if it can find a likely ESP.
+mount_esp_if_needed() {
+    # Only run when /mnt exists
+    if ! mountpoint -q /mnt; then
+        return 0
+    fi
+
+    # prefer /mnt/boot/efi, fallback to /mnt/boot
+    local esp_mount="/mnt/boot/efi"
+    local alt_mount="/mnt/boot"
+
+    # if already mounted, nothing to do
+    if mountpoint -q "$esp_mount" || mountpoint -q "$alt_mount"; then
+        info "ESP already mounted under $esp_mount or $alt_mount"
+        return 0
+    fi
+
+    info "Looking for an EFI System Partition (ESP) to mount under $esp_mount"
+
+    # Look for partitions with fstype vfat, or PARTLABEL/LABEL containing EFI or ESP,
+    # or the EFI partition GUID. Use lsblk to inspect block devices.
+    local candidate
+    # prefer explicit PARTLABEL or LABEL matches
+    candidate=$(lsblk -pn -o NAME,PARTLABEL,LABEL,FSTYPE,PARTTYPE | awk '$3 ~ /EFI|ESP/ || $4=="vfat" { print $1 }' | head -n1 || true)
+    if [ -z "$candidate" ]; then
+        # fallback to checking PARTTYPE GUID for EFI: c12a7328-f81f-11d2-ba4b-00a0c93ec93b
+        candidate=$(lsblk -pn -o NAME,PARTTYPE | awk 'tolower($2) ~ /c12a7328-f81f-11d2-ba4b-00a0c93ec93b/ { print $1 }' | head -n1 || true)
+    fi
+    if [ -z "$candidate" ]; then
+        info "No obvious ESP found (no vfat/EFI partition). Skipping automatic mount."
+        return 0
+    fi
+
+    info "Found candidate ESP: $candidate"
+
+    # Create mountpoint and attempt mount
+    $SUDO mkdir -p "$esp_mount"
+    if $SUDO mount -t vfat "$candidate" "$esp_mount" 2>/dev/null; then
+        info "Mounted $candidate -> $esp_mount"
+        return 0
+    fi
+
+    # try mounting to /mnt/boot if /mnt/boot/efi fails
+    $SUDO mkdir -p "$alt_mount"
+    if $SUDO mount -t vfat "$candidate" "$alt_mount" 2>/dev/null; then
+        info "Mounted $candidate -> $alt_mount"
+        return 0
+    fi
+
+    info "Failed to mount $candidate as vfat under $esp_mount or $alt_mount"
+    return 0
+}
+
 usage() {
     cat <<EOF
 Usage: $0 [options]
@@ -241,6 +325,11 @@ info "Disko completed successfully!"
 info "Filesystems are mounted under /mnt"
 echo
 
+# If skipping disko, try to detect and mount an ESP so UEFI bootloader installs succeed.
+if [ "$SKIP_DISKO" -eq 1 ]; then
+    mount_esp_if_needed
+fi
+
 TARGET_REPO_PATH="/mnt/etc/nixos"
 info "Copying configuration to $TARGET_REPO_PATH"
 $SUDO mkdir -p "$TARGET_REPO_PATH"
@@ -251,14 +340,49 @@ $SUDO rsync -a --exclude=.git --exclude=hardware-configuration.nix "$USE_DIR/" "
 # This is normally required for `nixos-install` to succeed on a new system.
 if [ "$DRY_RUN" -eq 0 ]; then
     info "Generating /mnt/etc/nixos/hardware-configuration.nix"
+    # When USING disko to create partitions we generally want to keep the
+    # filesystem layout produced by disko and avoid having
+    # `nixos-generate-config` regenerate `fileSystems` entries that may
+    # conflict. In that case use --no-filesystems. If the user skipped disko
+    # (pre-mounted filesystems manually) allow generating the full config.
     if command -v nixos-generate-config >/dev/null 2>&1; then
-        ${SUDO} nixos-generate-config --root /mnt
+        if [ "$SKIP_DISKO" -eq 0 ]; then
+            ${SUDO} nixos-generate-config --no-filesystems --root /mnt
+        else
+            ${SUDO} nixos-generate-config --root /mnt
+        fi
     else
         info "nixos-generate-config not available; attempting via 'nix run'"
-        ${SUDO} nix --experimental-features "nix-command flakes" run nixpkgs#nixos-generate-config -- --root /mnt
+        if [ "$SKIP_DISKO" -eq 0 ]; then
+            ${SUDO} nix --experimental-features "nix-command flakes" run nixpkgs#nixos-generate-config -- --no-filesystems --root /mnt
+        else
+            ${SUDO} nix --experimental-features "nix-command flakes" run nixpkgs#nixos-generate-config -- --root /mnt
+        fi
     fi
 else
     info "Dry-run: skipping hardware configuration generation"
+fi
+
+# If we used the current repository (not a temporary clone), copy the
+# generated hardware-configuration.nix back into the working repo so the
+# flake evaluated for installation includes the real hardware config. When
+# using a temporary clone (running from remote --repo), do not modify the
+# clone; instead the installer will use the files under /mnt/etc/nixos.
+if [ -z "$TMP_CLONE" ]; then
+    if [ -f /mnt/etc/nixos/hardware-configuration.nix ]; then
+        info "Copying generated hardware-configuration.nix -> $USE_DIR/hardware-configuration.nix"
+        # Use sudo cat to preserve permissions when running as non-root
+        if [ "${SUDO:-}" = "" ]; then
+            cp /mnt/etc/nixos/hardware-configuration.nix "$USE_DIR/hardware-configuration.nix"
+        else
+            $SUDO cp /mnt/etc/nixos/hardware-configuration.nix "$USE_DIR/hardware-configuration.nix"
+            $SUDO chown $(id -u):$(id -g) "$USE_DIR/hardware-configuration.nix" || true
+        fi
+    else
+        info "No generated hardware-configuration.nix found under /mnt/etc/nixos"
+    fi
+else
+    info "Temporary clone in use; not copying generated hardware-configuration.nix back to clone"
 fi
 
 echo
@@ -273,7 +397,14 @@ fi
 
 echo
 set +e
-${SUDO} nixos-install --root /mnt --flake "$TARGET_REPO_PATH#$HOST"
+FLAKE_PATH="$TARGET_REPO_PATH"
+# If we copied the generated hardware config back into the local repo, prefer
+# using the working directory flake so it includes that file during evaluation.
+if [ -z "$TMP_CLONE" ] && [ -f "$USE_DIR/hardware-configuration.nix" ]; then
+    FLAKE_PATH="$USE_DIR"
+    info "Using local flake path with generated hardware config: $FLAKE_PATH"
+fi
+${SUDO} nixos-install --root /mnt --flake "$FLAKE_PATH#$HOST"
 INSTALL_STATUS=$?
 set -e
 
@@ -285,9 +416,25 @@ fi
 echo
 if [ $INSTALL_STATUS -ne 0 ]; then
     err "nixos-install failed with status $INSTALL_STATUS"
-    echo "You may need to run it manually:"
-    echo "  sudo nixos-install --root /mnt --flake $TARGET_REPO_PATH#$HOST"
-    exit $INSTALL_STATUS
+
+    # Offer to enter a chroot so the user can make manual fixes.
+    if confirm "Enter a chroot at /mnt to make fixes and then retry installation?"; then
+        enter_chroot
+
+        # After leaving chroot, offer to retry nixos-install once more.
+        if confirm "Retry nixos-install now?"; then
+            set +e
+            ${SUDO} nixos-install --root /mnt --flake "$FLAKE_PATH#$HOST"
+            INSTALL_STATUS=$?
+            set -e
+        fi
+    fi
+
+    if [ $INSTALL_STATUS -ne 0 ]; then
+        echo "You may need to run it manually:"
+        echo "  sudo nixos-install --root /mnt --flake $FLAKE_PATH#$HOST"
+        exit $INSTALL_STATUS
+    fi
 fi
 
 info "Installation completed successfully!"
